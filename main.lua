@@ -1,0 +1,220 @@
+local lume = require("lib.lume")
+local json = require("lib.json")
+local util = require("util") -- i am not exactly sure whether lua has a "pragma once" kinda thing by default
+local log = util.log
+local panic = util.panic
+local panicif = util.panicif
+
+local function exec(cmd)
+	local tmpfile = os.tmpname()
+	local fullcmd = string.format("%s 2> %s", cmd, tmpfile)
+	local pipe = io.popen(fullcmd, "r")
+
+	panicif("can't run curl. are you sure it's in your path?", pipe == nil)
+
+	-- dawg im already checking nil
+	---@diagnostic disable-next-line: need-check-nil
+	local stdout = pipe:read("*a")
+	---@diagnostic disable-next-line: need-check-nil
+	pipe:close()
+
+	local f = io.open(tmpfile, "r")
+	local stderr = ""
+	if f then
+		stderr = f:read("*a")
+		f:close()
+		os.remove(tmpfile)
+	end
+
+	return stdout, stderr
+end
+
+---@class program
+---@field reqt request[]
+---@field store tuple[]
+---@field self_path string
+local M = { reqt = {} }
+
+function M:store_get(k)
+	for _, pair in ipairs(self.store) do
+		if pair[1] == k then
+			return pair[2]
+		end
+	end
+	return nil
+end
+
+---@param value any
+---@return any
+function M:res(value)
+	if type(value) == "function" then
+		return self:res(value()) -- recursively resolve return
+	elseif type(value) == "table" then
+		local out = {}
+		for k, v in pairs(value) do
+			out[self:res(k)] = self:res(v)
+		end
+		return out
+	elseif type(value) == "string" then
+		local resolved = value:gsub("{{(.+)}}", function(var)
+			return tostring(self:store_get(var) or os.getenv(var) or "{{" .. var .. "}}")
+		end)
+		return resolved
+	else
+		return value
+	end
+end
+
+---@param req request
+---@return string curl_command
+function M:to_curl(req)
+	local cmd = { "curl", "-X", self:res(req.method), string.format("'%s'", self:res(req.url)) }
+
+	-- headers
+	if req.headers then
+		for k, v in pairs(req.headers) do
+			local key = self:res(k)
+			local val = self:res(v)
+			local header = type(key) == "number" and val or (key .. ": " .. val)
+			table.insert(cmd, "-H " .. string.format("'%s'", header))
+		end
+	end
+
+	-- body
+	if req.body then
+		local resolved_body = {}
+		for k, v in pairs(req.body) do
+			resolved_body[self:res(k)] = self:res(v)
+		end
+		local encoded = json.encode(resolved_body)
+		table.insert(cmd, "-d '" .. encoded .. "'")
+	end
+
+	return table.concat(cmd, " ")
+end
+
+---@param t table
+---@param path string
+local function save_table(t, path)
+	local str = util.unfold_table(t, 0)
+	local f = assert(io.open(path, "w+"))
+	f:write("---@type tuple[]\nreturn ", str, "\n")
+	f:close()
+end
+
+function M:list_requests()
+	local list = {}
+	for i, t in pairs(self.reqt) do
+		assert(t.method ~= nil and t.url ~= nil, "request " .. i .. ": both method and url fields are required")
+		table.insert(list, (i .. ": " .. t.method .. " " .. t.url))
+	end
+	return table.concat(list, "\n")
+end
+
+function M:parse_fzf_res(out)
+	local n = tonumber(string.match(out, "%d+"))
+	local curl_cmd = self:to_curl(self.reqt[n]) .. " -w '%{http_code}'"
+	local ret, err = exec(curl_cmd)
+	panicif("error? " .. err, err)
+
+	-- local status_code = ret:sub(-3)
+	-- io.stdout:write("status: " .. status_code .. "\n")
+	local body = ret:sub(1, -4)
+
+	local jj = json.decode(body)
+	-- rest of your code stays the same.
+	if self.reqt[n].save ~= nil then
+		local tpls = self.reqt[n].save
+
+		local vals = (lume.map(tpls, function(k)
+			return { k[2], jj[k[1]] }
+		end))
+
+		for stored_key, stored_value in pairs(self.store) do
+			for _, new_value in pairs(vals) do
+				if stored_value[1] == new_value[1] then
+					self.store[stored_key] = new_value
+				end
+			end
+		end
+
+		save_table(self.store, self.self_path)
+	end
+	log("JSON:")
+	log(ret:sub(0, #ret - 4)) -- magic number. 3 chars for the return code and one for newline
+	log(ret:sub(-3))
+end
+
+function M:parse_store()
+	panicif("no reqt value set", self.reqt == nil)
+	local store_file = self.self_path .. "_var.lua"
+	local _, err = io.open(store_file)
+	if err ~= nil then
+		self.store = {}
+		save_table(self.store, store_file)
+		return
+	end
+	self.store = require(self.self_path .. "_var")
+end
+
+---@param path string
+function M:run(path)
+	self.self_path = path
+	self.reqt = require(self.self_path)
+	self:parse_store()
+	local t = self:list_requests()
+	local self_cmd = ""
+	for i, a in pairs(arg) do
+		if i < 1 then
+			self_cmd = self_cmd .. a .. " "
+		end
+	end
+	-- TODO: replace with any colored output. maybe bat?
+	local cmd, err = exec("echo '" .. t .. "' | fzf --preview '" .. self_cmd .. path .. " preview {} | cat '")
+	panicif(err, err ~= nil)
+	self:parse_fzf_res(cmd)
+end
+
+function M:preview(path)
+	self.self_path = path
+	local reqt = require(path)
+	self:parse_store()
+	local n = tonumber(string.match(arg[3], "%d+"))
+
+	local resolved = self:res(reqt[n])
+	log(resolved)
+	os.exit(0)
+end
+
+local program = M
+
+--
+-- this is the part where the executable is ran
+--
+
+if #arg < 1 then
+	local ret = "\27[31minvalid params! \27[0musage:\n"
+	for _, a in pairs(arg) do
+		ret = ret .. a .. " "
+	end
+	ret = ret .. "[requests.lua]"
+	panic(ret)
+	os.exit(-1)
+end
+
+local path = ""
+if string.match(arg[1], "%S+lua") then
+	path = string.sub(arg[1], 1, #arg[1] - 4)
+else
+	path = arg[1]
+end
+
+if arg[2] == "preview" then
+	program:preview(path)
+end
+
+panicif("no file provided", path ~= nil, path == "")
+
+program:run(path)
+
+os.exit(0)
