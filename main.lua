@@ -33,9 +33,9 @@ end
 ---@field reqt request[]
 ---@field store tuple[]
 ---@field self_path string
-local M = { reqt = {} }
+local A = { reqt = {} }
 
-function M:store_get(k)
+function A:store_get(k)
 	for _, pair in ipairs(self.store) do
 		if pair[1] == k then
 			return pair[2]
@@ -46,7 +46,7 @@ end
 
 ---@param value any
 ---@return any
-function M:res(value)
+function A:res(value)
 	if type(value) == "function" then
 		return self:res(value()) -- recursively resolve return
 	elseif type(value) == "table" then
@@ -67,7 +67,7 @@ end
 
 ---@param req request
 ---@return string curl_command
-function M:to_curl(req)
+function A:to_curl(req)
 	local cmd = { "curl", "-X", self:res(req.method), string.format("'%s'", self:res(req.url)) }
 
 	-- headers
@@ -96,13 +96,16 @@ end
 ---@param t table
 ---@param path string
 local function save_table(t, path)
-	local str = util.unfold_table(t, 0)
 	local f = assert(io.open(path, "w+"))
-	f:write("---@type tuple[]\nreturn ", str, "\n")
+	f:write("---@type tuple[]\nreturn {\n")
+	for _, pair in ipairs(t) do
+		f:write(string.format("  { %q, %q },\n", tostring(pair[1]), tostring(pair[2])))
+	end
+	f:write("}\n")
 	f:close()
 end
 
-function M:list_requests()
+function A:list_requests()
 	local list = {}
 	for i, t in pairs(self.reqt) do
 		assert(t.method ~= nil and t.url ~= nil, "request " .. i .. ": both method and url fields are required")
@@ -111,7 +114,7 @@ function M:list_requests()
 	return table.concat(list, "\n")
 end
 
-function M:parse_fzf_res(out)
+function A:parse_fzf_res(out)
 	local n = tonumber(string.match(out, "%d+"))
 	local curl_cmd = self:to_curl(self.reqt[n]) .. " -w '%{http_code}'"
 	local ret, err = exec(curl_cmd)
@@ -130,22 +133,31 @@ function M:parse_fzf_res(out)
 			return { k[2], jj[k[1]] }
 		end))
 
-		for stored_key, stored_value in pairs(self.store) do
-			for _, new_value in pairs(vals) do
-				if stored_value[1] == new_value[1] then
-					self.store[stored_key] = new_value
+		for _, new_value in ipairs(vals) do
+			local found = false
+			for _, stored_pair in ipairs(self.store) do
+				if stored_pair[1] == new_value[1] then
+					stored_pair[2] = new_value[2]
+					found = true
+					break
 				end
+			end
+			if not found then
+				table.insert(self.store, new_value)
+				log(new_value)
+				log(self.store)
 			end
 		end
 
-		save_table(self.store, self.self_path)
+		save_table(self.store, self.self_path .. "_var.lua")
 	end
-	log("JSON:")
+	log("\27[32mresponse:\27[0m")
 	log(ret:sub(0, #ret - 4)) -- magic number. 3 chars for the return code and one for newline
+	log("\n\27[32mstatus:\27[0m")
 	log(ret:sub(-3))
 end
 
-function M:parse_store()
+function A:parse_store()
 	panicif("no reqt value set", self.reqt == nil)
 	local store_file = self.self_path .. "_var.lua"
 	local _, err = io.open(store_file)
@@ -158,7 +170,7 @@ function M:parse_store()
 end
 
 ---@param path string
-function M:run(path)
+function A:run(path)
 	self.self_path = path
 	self.reqt = require(self.self_path)
 	self:parse_store()
@@ -175,7 +187,7 @@ function M:run(path)
 	self:parse_fzf_res(cmd)
 end
 
-function M:preview(path)
+function A:preview(path)
 	self.self_path = path
 	local reqt = require(path)
 	self:parse_store()
@@ -186,7 +198,7 @@ function M:preview(path)
 	os.exit(0)
 end
 
-local program = M
+local program = A
 
 --
 -- this is the part where the executable is ran
