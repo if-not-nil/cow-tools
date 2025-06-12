@@ -1,5 +1,5 @@
 # cow tools
-> no, the moon
+> [no, the moon](https://if-not-nil.github.io/no-the-moon/)
 
 use lua code to test your apis  
 <img width="710" alt="to save" src="https://github.com/user-attachments/assets/9ae13dfa-0a8f-48fb-bde0-10ccb2873db9" />
