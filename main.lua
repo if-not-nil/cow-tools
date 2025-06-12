@@ -81,7 +81,7 @@ function A:to_curl(req)
 	end
 
 	-- body
-	if req.body then
+	if req.body and req.body ~= nil then
 		local resolved_body = {}
 		for k, v in pairs(req.body) do
 			resolved_body[self:res(k)] = self:res(v)
@@ -114,8 +114,10 @@ function A:list_requests()
 	return table.concat(list, "\n")
 end
 
-function A:parse_fzf_res(out)
-	local n = tonumber(string.match(out, "%d+"))
+function A:parse_fzf_res(out, i)
+	local n = i or tonumber(string.match(out, "%d+"))
+	log(n)
+	log(self.reqt[n])
 	local curl_cmd = self:to_curl(self.reqt[n]) .. " -w '%{http_code}'"
 	local ret, err = exec(curl_cmd)
 	panicif("error? " .. err, err)
@@ -174,14 +176,14 @@ function A:run(path)
 	self.self_path = path
 	self.reqt = require(self.self_path)
 	self:parse_store()
-	local t = self:list_requests()
-	local self_cmd = ""
-	for i, a in pairs(arg) do
-		if i < 1 then
-			self_cmd = self_cmd .. a .. " "
-		end
+
+	if tonumber(arg[2]) then
+		self:parse_fzf_res(nil, tonumber(arg[2]))
+		return
 	end
-	-- TODO: replace with any colored output. maybe bat?
+
+	local t = self:list_requests()
+	local self_cmd = table.concat(arg, " "):gsub(path, "") -- fallback
 	local cmd, err = exec("echo '" .. t .. "' | fzf --preview '" .. self_cmd .. path .. " preview {} | cat '")
 	panicif(err, err ~= nil)
 	self:parse_fzf_res(cmd)
@@ -209,7 +211,7 @@ if #arg < 1 then
 	for _, a in pairs(arg) do
 		ret = ret .. a .. " "
 	end
-	ret = ret .. "[requests.lua]"
+	ret = ret .. "[requests.lua] [optional: number | preview]"
 	panic(ret)
 	os.exit(-1)
 end
