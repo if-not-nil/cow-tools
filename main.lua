@@ -142,8 +142,9 @@ function A:parse_fzf_res(out, n)
 
 	local ok, jj = pcall(json.decode, body)
 	if not ok then
-		panic("failed to parse JSON: " .. tostring(jj))
+		return
 	end
+	-- this seems weird but i returned early because what comes next is only applicable when you got json
 
 	local saved = {}
 	local tpls = self.reqt[n].save
