@@ -1,6 +1,16 @@
--- local lume = require("lib.lume")
+local function get_script_dir()
+	local info = debug.getinfo(1, "S")
+	local script_path = info.source:sub(2)
+	return script_path:match("(.*/)")
+end
+
+local script_dir = get_script_dir() or "./"
+
+package.path = script_dir .. "?.lua;" .. script_dir .. "lib/?.lua;" .. package.path
+package.cpath = script_dir .. "lib/?.so;" .. package.cpath
+
 local json = require("lib.json")
-local util = require("util") -- i am not exactly sure whether lua has a "pragma once" kinda thing by default
+local util = require("lib.util") -- i am not exactly sure whether lua has a "pragma once" kinda thing by default
 local log = util.log
 local panic = util.panic
 local panicif = util.panicif
@@ -10,7 +20,7 @@ local function exec(cmd)
 	local fullcmd = string.format("%s 2> %s", cmd, tmpfile)
 	local pipe = io.popen(fullcmd, "r")
 
-	panicif("can't run. are you sure it's in your path?", pipe == nil)
+	panicif("can't run command. are you sure it's in your path?", pipe == nil)
 
 	-- dawg im already checking nil
 	---@diagnostic disable-next-line: need-check-nil
@@ -188,7 +198,13 @@ function A:run(path)
 	end
 
 	local t = self:list_requests()
-	local self_cmd = table.concat(arg, " "):gsub(path, "") -- fallback
+	local self_cmd = ""
+	for i, a in pairs(arg) do
+		if i < 1 then
+			self_cmd = self_cmd .. a .. " "
+		end
+	end
+	-- TODO: replace with any colored output. maybe bat?
 	local cmd, err = exec("echo '" .. t .. "' | fzf --preview '" .. self_cmd .. path .. " preview {} | cat '")
 	panicif(err, err ~= nil)
 	self:parse_fzf_res(cmd)
@@ -212,11 +228,15 @@ local program = A
 --
 
 if #arg < 1 then
-	local ret = "\27[31minvalid params! \27[0musage:\n"
+	local ret = "usage:\n\27[33minteractive: \27[0m"
 	for _, a in pairs(arg) do
 		ret = ret .. a .. " "
 	end
-	ret = ret .. "[requests.lua] [optional: number | preview]"
+	ret = ret .. "[requests.lua]\n\27[33mrun by name: \27[0m"
+	for _, a in pairs(arg) do
+		ret = ret .. a .. " "
+	end
+	ret = ret .. "[requests.lua] [n]\n"
 	panic(ret)
 	os.exit(-1)
 end
