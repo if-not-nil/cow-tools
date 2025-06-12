@@ -122,12 +122,20 @@ function A:parse_fzf_res(out, i)
 	local ret, err = exec(curl_cmd)
 	panicif("error? " .. err, err)
 
-	-- local status_code = ret:sub(-3)
-	-- io.stdout:write("status: " .. status_code .. "\n")
+	local status_code = tonumber(ret:sub(-3))
 	local body = ret:sub(1, -4)
 
+	log("\27[32mresponse:\27[0m")
+	log(body)
+	log("\n\27[32mstatus:\27[0m")
+	log(status_code)
+
+	if status_code ~= 200 then
+		panic(string.format("\n\27[31mrequest failed!\27[0m %d", status_code))
+	end
+
 	local jj = json.decode(body)
-	-- rest of your code stays the same.
+
 	if self.reqt[n].save ~= nil then
 		local tpls = self.reqt[n].save
 
