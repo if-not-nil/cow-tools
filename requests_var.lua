@@ -1,4 +1,4 @@
----@type table<string, string>
+---@type table
 return {
-  ["TOKEN"] = "1749742686939628",
+  ["TOKEN"] = "1749744149158358",
 }

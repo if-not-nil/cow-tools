@@ -34,7 +34,7 @@ return {
 			end,
 		},
 		save = {
-			{ "token", "TOKEN" },
+			token = "TOKEN",
 		},
 	},
 	{

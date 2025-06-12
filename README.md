@@ -7,10 +7,10 @@ its main feature is the way it takes advantage of LuaLS\
 
 *WORK IN PROGRESS*!!! only the basic functionality works.
 
-*INSTAlLATION:*
+*INSTALLATION:*
 `git clone https://github.com/if-not-nil/cowtools`\
-you also need curl and fzf installed.\
-you can go far without a plugin for lua in your editor, but i built it for you to like lua more so please use one
+you need curl installed and available in $PATH\
+you can go far without a plugin for lua in your editor, but it's the intended way to use it
 
 *USAGE:*\
 lua main.lua [requests.lua]

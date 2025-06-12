@@ -1,4 +1,4 @@
-local lume = require("lib.lume")
+-- local lume = require("lib.lume")
 local json = require("lib.json")
 local util = require("util") -- i am not exactly sure whether lua has a "pragma once" kinda thing by default
 local log = util.log
@@ -10,7 +10,7 @@ local function exec(cmd)
 	local fullcmd = string.format("%s 2> %s", cmd, tmpfile)
 	local pipe = io.popen(fullcmd, "r")
 
-	panicif("can't run curl. are you sure it's in your path?", pipe == nil)
+	panicif("can't run. are you sure it's in your path?", pipe == nil)
 
 	-- dawg im already checking nil
 	---@diagnostic disable-next-line: need-check-nil
@@ -31,7 +31,7 @@ end
 
 ---@class program
 ---@field reqt request[]
----@field store table<string, string>
+---@field store table
 ---@field self_path string
 local A = { reqt = {}, store = {} }
 
@@ -72,7 +72,7 @@ function A:to_curl(req)
 	end
 
 	-- body
-	if req.body and req.body ~= nil then
+	if req.body then
 		local resolved_body = {}
 		for k, v in pairs(req.body) do
 			resolved_body[self:res(k)] = self:res(v)
@@ -88,7 +88,7 @@ end
 ---@param path string
 local function save_table(t, path)
 	local f = assert(io.open(path, "w+"))
-	f:write("---@type table<string, string>\nreturn {\n")
+	f:write("---@type table\nreturn {\n")
 	for k, v in pairs(t) do
 		f:write(string.format("  [%q] = %q,\n", tostring(k), tostring(v)))
 	end
@@ -98,15 +98,17 @@ end
 
 function A:list_requests()
 	local list = {}
-	for i, t in pairs(self.reqt) do
-		assert(t.method ~= nil and t.url ~= nil, "request " .. i .. ": both method and url fields are required")
+	for i, t in ipairs(self.reqt) do
+		panicif("request " .. i .. " is missing method or url", not (t.method and t.url))
 		table.insert(list, (i .. ": " .. t.method .. " " .. t.url))
 	end
 	return table.concat(list, "\n")
 end
 
-function A:parse_fzf_res(out, i)
-	local n = i or tonumber(string.match(out, "%d+"))
+function A:parse_fzf_res(out, n)
+	if not n then
+		n = tonumber(string.match(out, "%d+"))
+	end
 	local curl_cmd = self:to_curl(self.reqt[n]) .. " -w '%{http_code}'"
 	local ret, err = exec(curl_cmd)
 	panicif("error? " .. err, err)
@@ -114,13 +116,18 @@ function A:parse_fzf_res(out, i)
 	local status_code = tonumber(ret:sub(-3))
 	local body = ret:sub(1, -4)
 
-	log("\27[32mresponse:\27[0m")
-	log(body)
-	log("\n\27[32mstatus:\27[0m")
-	log(status_code)
+	if #body > 0 then
+		log("\27[32m=====> response\27[0m")
+		log(body)
+	end
 
 	if status_code ~= 200 then
-		panic(string.format("\n\27[31mrequest failed!\27[0m %d", status_code))
+		log("\27[31m=====> request failed \27[0m")
+		log("\27[31m       status: \27[0m")
+		panic(status_code)
+	else
+		log("\27[32m=====> status:\27[0m")
+		log(status_code)
 	end
 
 	local ok, jj = pcall(json.decode, body)
@@ -128,25 +135,28 @@ function A:parse_fzf_res(out, i)
 		panic("failed to parse JSON: " .. tostring(jj))
 	end
 
-	if self.reqt[n].save ~= nil then
-		local tpls = self.reqt[n].save
-
-		local vals = (lume.map(tpls, function(k)
-			return { k[2], jj[k[1]] }
-		end))
+	local saved = {}
+	local tpls = self.reqt[n].save
+	if tpls ~= nil then
+		local vals = {}
+		for response_key, store_key in pairs(tpls) do
+			vals[#vals + 1] = { store_key, jj[response_key] }
+		end
 
 		for _, pair in ipairs(vals) do
 			local key, val = pair[1], pair[2]
 			self.store[key] = val
-			log(string.format("saved: %s = %s", key, val))
+			table.insert(saved, { key, val })
 		end
 
-		save_table(self.store, self.self_path .. "_var.lua")
+		if #saved > 0 then
+			log("\27[32m=====> saved:\27[0m")
+			for _, v in pairs(saved) do
+				log(string.format("* \27[33m     {{%s}}\27[0m", v[1]))
+			end
+			save_table(self.store, self.self_path .. "_var.lua")
+		end
 	end
-	log("\27[32mresponse:\27[0m")
-	log(ret:sub(0, #ret - 4)) -- magic number. 3 chars for the return code and one for newline
-	log("\n\27[32mstatus:\27[0m")
-	log(ret:sub(-3))
 end
 
 function A:parse_store()
@@ -170,6 +180,11 @@ function A:run(path)
 	if tonumber(arg[2]) then
 		self:parse_fzf_res(nil, tonumber(arg[2]))
 		return
+	elseif arg[2] == "dryrun" then
+		for i, req in ipairs(self.reqt) do
+			log(i, self:to_curl(req), "\n")
+		end
+		os.exit(0)
 	end
 
 	local t = self:list_requests()
