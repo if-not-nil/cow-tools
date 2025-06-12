@@ -31,18 +31,9 @@ end
 
 ---@class program
 ---@field reqt request[]
----@field store tuple[]
+---@field store table<string, string>
 ---@field self_path string
-local A = { reqt = {} }
-
-function A:store_get(k)
-	for _, pair in ipairs(self.store) do
-		if pair[1] == k then
-			return pair[2]
-		end
-	end
-	return nil
-end
+local A = { reqt = {}, store = {} }
 
 ---@param value any
 ---@return any
@@ -57,7 +48,7 @@ function A:res(value)
 		return out
 	elseif type(value) == "string" then
 		local resolved = value:gsub("{{(.+)}}", function(var)
-			return tostring(self:store_get(var) or os.getenv(var) or "{{" .. var .. "}}")
+			return tostring(self.store[var] or os.getenv(var) or "{{" .. var .. "}}")
 		end)
 		return resolved
 	else
@@ -97,9 +88,9 @@ end
 ---@param path string
 local function save_table(t, path)
 	local f = assert(io.open(path, "w+"))
-	f:write("---@type tuple[]\nreturn {\n")
-	for _, pair in ipairs(t) do
-		f:write(string.format("  { %q, %q },\n", tostring(pair[1]), tostring(pair[2])))
+	f:write("---@type table<string, string>\nreturn {\n")
+	for k, v in pairs(t) do
+		f:write(string.format("  [%q] = %q,\n", tostring(k), tostring(v)))
 	end
 	f:write("}\n")
 	f:close()
@@ -116,8 +107,6 @@ end
 
 function A:parse_fzf_res(out, i)
 	local n = i or tonumber(string.match(out, "%d+"))
-	log(n)
-	log(self.reqt[n])
 	local curl_cmd = self:to_curl(self.reqt[n]) .. " -w '%{http_code}'"
 	local ret, err = exec(curl_cmd)
 	panicif("error? " .. err, err)
@@ -134,7 +123,10 @@ function A:parse_fzf_res(out, i)
 		panic(string.format("\n\27[31mrequest failed!\27[0m %d", status_code))
 	end
 
-	local jj = json.decode(body)
+	local ok, jj = pcall(json.decode, body)
+	if not ok then
+		panic("failed to parse JSON: " .. tostring(jj))
+	end
 
 	if self.reqt[n].save ~= nil then
 		local tpls = self.reqt[n].save
@@ -143,20 +135,10 @@ function A:parse_fzf_res(out, i)
 			return { k[2], jj[k[1]] }
 		end))
 
-		for _, new_value in ipairs(vals) do
-			local found = false
-			for _, stored_pair in ipairs(self.store) do
-				if stored_pair[1] == new_value[1] then
-					stored_pair[2] = new_value[2]
-					found = true
-					break
-				end
-			end
-			if not found then
-				table.insert(self.store, new_value)
-				log(new_value)
-				log(self.store)
-			end
+		for _, pair in ipairs(vals) do
+			local key, val = pair[1], pair[2]
+			self.store[key] = val
+			log(string.format("saved: %s = %s", key, val))
 		end
 
 		save_table(self.store, self.self_path .. "_var.lua")
