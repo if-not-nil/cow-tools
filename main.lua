@@ -83,6 +83,7 @@ function A:to_curl(req)
 
 	-- body
 	if req.body then
+		table.insert(cmd, '-H "Content-Type: application/json"')
 		local resolved_body = {}
 		for k, v in pairs(req.body) do
 			resolved_body[self:res(k)] = self:res(v)
@@ -91,6 +92,7 @@ function A:to_curl(req)
 		table.insert(cmd, "-d '" .. encoded .. "'")
 	end
 
+	log(table.concat(cmd, " "))
 	return table.concat(cmd, " ")
 end
 
