@@ -1,31 +1,32 @@
 # cow tools
 > [no, the moon](https://if-not-nil.github.io/no-the-moon/)
 
-use lua code to test your apis  
+a lightweight lua-based api testing framework  
 <img width="710" alt="to save" src="https://github.com/user-attachments/assets/9ae13dfa-0a8f-48fb-bde0-10ccb2873db9" />
 
 ## features
-- any valid lua code can make requests
+- any valid lua code can be used
 - use fzf to go through requests
-- it's kinda pretty
 - small and easy to modify if something doesn't work
-- it's easier to fully understand than similar tools
+- it's easy to fully understand
+- your text editor if your GUI
 
 ## installation
-you need curl installed and available in $PATH  
+you need both curl and lua installed  
+an LSP is recommended to get type hints when writing requests  
 ```bash
 git clone https://github.com/if-not-nil/cow-tools
 cd cow-tools
 echo alias cows='"'lua $(pwd)/main.lua'"' >> ~/.bashrc
 ```
-if you don't want to install it, just running `lua absolute/path/to/main.lua` is alright  
-the last line makes a bash alias for you
 
-you should probably have an lsp as the type hints in types.d.lua will help you a lot
+or run directly
+`lua $PWD/main.lua`
+
 
 ## usage
 make a lua file  
-this is the simplest thing you can set up to make sure it's working  
+this is the simplest way to use it. save it to first.lua in your working directory  
 ```lua
 # first.lua
 ---@type request[]
@@ -39,8 +40,8 @@ return {
 this does just what you think it does
 now, run `cows first.lua 1`  
 <img width="734" alt="placeholder" src="https://github.com/user-attachments/assets/5bf85b8c-974c-41cf-b540-c77828059170" />  
-that's right, you're balling now
-now, if you have fzf, just run `cows first.lua`  
+
+now, if you have fzf, try running `cows first`  
 it's not colorized or anything yet, but it helps you keep up with the requests you have
 
 here's a better example
@@ -103,12 +104,18 @@ return {
 this codebase is yours just as much as it is mine  
 if you feel like you've added something everybody will appreciate, please make a pull request
 
-### note to self
-request names, when calling with no fzf should both be able to be like [METHOD]:[path] (path being the shortest possible without colliding from the top)  
+### what's next
+[ ] request names, when calling with no fzf should both be able to be like [METHOD]:[path] (path being the shortest possible without colliding from the top)  
+[ ] multipart support. maybe a cosmopolitan libc .so library that can generate random files to test the api?  
+[ ] structure the code in a way obvious to the reader  
+[ ] named requests  
+[ ] chaining requests (maybe a table called chains which sequentially executes either named requests or normal ones?)
+[ ] init argument which will copy the type definitions and create a blank requests file for you  
+[ ] pretty print json  
 
-### why cow tools
+### why is it called cow tools
 because of cow tools the comic  
 lua -> moon -> moo, and mootools is takes
 
-### copyrights:
+### licenses:
 * [rxi/json](https://github.com/rxi/json) MIT  
