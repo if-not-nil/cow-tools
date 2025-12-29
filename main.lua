@@ -1,7 +1,4 @@
 #!/usr/bin/env lua
-local json = require("lib.json")
-local util = require("lib.util") -- i am not exactly sure whether lua has a "pragma once" kinda thing by default
-local inspect = require("lib.inspect").inspect
 
 local function get_script_dir()
 	local info = debug.getinfo(1, "S")
@@ -13,6 +10,11 @@ local script_dir = get_script_dir() or "./"
 
 package.path = script_dir .. "?.lua;" .. script_dir .. "lib/?.lua;" .. package.path
 package.cpath = script_dir .. "lib/?.so;" .. package.cpath
+
+local json = require("lib.json")
+local util = require("lib.util")
+
+local inspect = require("lib.inspect").inspect
 
 local pprint = function(root, options)
 	print(inspect(root, options))
@@ -146,25 +148,32 @@ function A:parse_fzf_res(out, n)
 	if #body > 0 then
 		log("\27[32m=====> response\27[0m")
 		if util.has("jq") then
-			local safe_body = string.format("%q", body)
-			os.execute("echo " .. safe_body .. " | jq")
+			local jq_pipe = io.popen("jq . 2>/dev/null", "w")
+			if jq_pipe then
+				jq_pipe:write(body)
+				local success = jq_pipe:close()
+				if not success then
+					print(body)
+				end
+			else
+				print(body)
+			end
+		else
+			print(body)
 		end
 	end
 
-	if status_code < 200 or status_code >= 300 then
+	if status_code and status_code < 200 then
 		log("\27[31m=====> request failed \27[0m")
-		log("\27[31m       status: \27[0m")
-		panic(status_code)
+		log("\27[31m       status: \27[0m" .. status_code)
 	else
-		log("\27[32m=====> status:\27[0m")
-		log(status_code)
+		log("\27[32m=====> status:\27[0m " .. (status_code or "unknown"))
 	end
 
 	local ok, jj = pcall(json.decode, body)
-	if not ok then
+	if not ok or type(jj) ~= "table" then
 		return
 	end
-	-- this seems weird but i returned early because what comes next is only applicable when you got json
 
 	local saved = {}
 	local tpls = self.reqt[n].save
